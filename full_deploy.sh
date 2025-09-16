@@ -118,22 +118,45 @@ create_project_files() {
     cd "$WORK_DIR"
     
     # 创建3proxy配置文件
+#     cat > 3proxy.cfg << EOF
+# # 3proxy配置文件
+# nserver 8.8.8.8
+# nserver 8.8.4.4
+# nscache 65536
+# timeouts 1 5 30 60 180 1800 15 60
+
+# # 修正: 移除日志轮替标志'D'，以防止在/dev/目录下创建文件导致权限问题。
+# # 这样配置会直接将日志输出到标准输出流，由Docker管理。
+# log /dev/stdout
+
+# logformat "- +_L%t.%. %N.%p %E %U %C:%c %R:%r %O %I %h %T"
+# auth strong
+# users $SOCKS_USER:CL:$SOCKS_PASS
+# allow $SOCKS_USER
+# socks -p$SOCKS_PORT
+
     cat > 3proxy.cfg << EOF
-# 3proxy配置文件
+# DNS 建议保留，必要时你可换成自己可信的 DoH/企业 DNS
 nserver 8.8.8.8
 nserver 8.8.4.4
 nscache 65536
-timeouts 1 5 30 60 180 1800 15 60
-
-# 修正: 移除日志轮替标志'D'，以防止在/dev/目录下创建文件导致权限问题。
-# 这样配置会直接将日志输出到标准输出流，由Docker管理。
+# 放宽时间参数：# accept=30s, connect=120s, io=3600s(1h), dns=60s, tcpfin=600s, keepalive=86400s(1d), dnsretry=15s, session=0(无限)
+# timeouts  <accept> <connect> <io> <dnsresolv> <tcpfin> <keepalive> <dnsretry> <session>
+timeouts 30 120 3600 60 600 86400 15 0
 log /dev/stdout
-
 logformat "- +_L%t.%. %N.%p %E %U %C:%c %R:%r %O %I %h %T"
+
 auth strong
 users $SOCKS_USER:CL:$SOCKS_PASS
 allow $SOCKS_USER
+
+# 同时开启 SOCKS5 和 HTTP CONNECT 两个入口
+# 1) SOCKS5（原有）
 socks -p$SOCKS_PORT
+
+# 2) HTTP 代理（新增一个端口，比如 8118；-n 关闭本地解析，全部走隧道）
+proxy -p8118 -n
+
 EOF
 
     # 创建Dockerfile
@@ -189,6 +212,7 @@ services:
     container_name: socks5-proxy-server
     ports:
       - "$SOCKS_PORT:$SOCKS_PORT"
+      - "8118:8118"
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
